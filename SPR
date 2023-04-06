@@ -1,0 +1,131 @@
+use master
+go
+
+drop database if exists SaaristoSecurity
+go
+-- Create the LastnameSecurity database
+CREATE DATABASE SaaristoSecurity;
+go
+
+-- Use the LastnameSecurity database
+USE SaaristoSecurity;
+
+-- Create the Employee table
+drop table if exists Employee
+go
+
+CREATE TABLE Employee (
+    ID int IDENTITY(1,1) NOT NULL,
+    FirstName varchar(25) NOT NULL,
+    LastName varchar(25) NOT NULL,
+    Email varchar(100) NOT NULL,
+	Password varchar(50) not null,
+    DateAdded datetime2(2) NOT NULL DEFAULT GETDATE(),
+    DateUpdated datetime2(2) NULL,
+    StatusTypeID tinyint NOT NULL DEFAULT 1,
+    PasswordSalt nvarchar(36) NULL,
+    PasswordHash binary(64) NULL
+);
+go
+
+CREATE or alter PROCEDURE spEmployeeInsert
+    @FirstName varchar(25),
+    @LastName varchar(25),
+    @Email varchar(100),
+    @Password varchar(50)
+AS
+BEGIN
+    DECLARE @PasswordSalt nvarchar(36)
+    DECLARE @PasswordHash BINARY(64)
+
+    -- Generate a random password salt
+    SELECT @PasswordSalt = NEWID()
+
+    -- Hash the password using the salt
+    SELECT @PasswordHash = HASHBYTES('SHA2_512', @Password + CAST(@PasswordSalt AS NVARCHAR(128)))
+
+    INSERT INTO Employee (FirstName, LastName, Email, Password, PasswordSalt, PasswordHash)
+    VALUES (@FirstName, @LastName, @Email, @Password, @PasswordSalt, @PasswordHash)
+END
+go
+
+CREATE or alter PROCEDURE spEmployeeLogin
+    @Email varchar(100),
+    @Password varchar(50)
+AS
+BEGIN
+    DECLARE @PasswordSalt nvarchar(36)
+    DECLARE @PasswordHash BINARY(64)
+    DECLARE @PasswordHashStored BINARY(64)
+    DECLARE @EmployeeID INT
+
+    -- Look up the employee's password salt and hashed password
+    SELECT @PasswordSalt = PasswordSalt, @PasswordHashStored = PasswordHash, @EmployeeID = ID
+    FROM Employee
+    WHERE Email = @Email
+
+    -- Hash the entered password using the stored salt
+    SELECT @PasswordHash = HASHBYTES('SHA2_512', @Password + cast(@PasswordSalt AS NVARCHAR(128)))
+
+    -- Compare the entered password hash to the stored password hash
+    IF @PasswordHash = @PasswordHashStored
+    BEGIN
+        -- If the password matches, select the employee's information
+        SELECT e.ID , e.FirstName, e.LastName
+        FROM Employee e
+        WHERE e.ID = @EmployeeID
+    END
+    ELSE
+    BEGIN
+        -- If the password does not match, return a record indicating that the user was not found
+        SELECT -1 AS 'ID', 'Not' AS 'First', 'Found' AS 'Last', 'NOTE: USER NOT FOUND!'
+    END
+END
+go
+
+
+
+
+
+CREATE or alter PROCEDURE spEmployeePasswordReset
+@ID int,
+@NewPassword nvarchar(36)
+AS
+BEGIN
+    UPDATE Employee
+    SET Password = @NewPassword,  dateUpdated = getdate()
+    WHERE ID = @ID
+END
+go
+
+exec spEmployeeInsert 'Brian', 'Saaristo', 'School@Email.com', '54321'
+exec spEmployeeInsert 'Bob', 'Odenkirk', 'Bettercall@Saul.com', '22222'
+exec spEmployeeInsert 'Davey', 'Jones', 'DaveyJones@Locker.com', 'bones'
+go
+
+-- Show the data
+select * from Employee
+go
+
+-- Login with on of the records
+exec spEmployeeLogin 'Bettercall@saul.com', '22222'
+go
+
+-- Login with on of the records, wrong password
+exec spEmployeeLogin 'DaveyJones@locker.com', 'boness'
+go
+
+-- Change password
+exec spEmployeePasswordReset 1, '12345'
+exec spEmployeePasswordReset 2, 'ITW@SW@LT3RWH1T3'
+exec spEmployeePasswordReset 3, 'BONES1'
+go
+
+-- Login with new password
+exec spEmployeeLogin 'Bettercall@saul.com', 'ITW@SW@LT3RWH1T3'
+go
+
+-- View all the data just for fun
+select * from Employee
+go
+
